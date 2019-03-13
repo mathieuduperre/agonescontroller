@@ -3,10 +3,7 @@ import yaml
 from kubernetes import client, config, watch
 import os
 
-DOMAIN = "kool.karmalabs.local"
-goodbrands = ['coleclark', 'fender', 'gibson', 'ibanez', 'martin', 'seagull', 'squier', 'washburn']
-badbrands = ['epiphone', 'guild', 'gretsch', 'jackson', 'ovation', 'prs', 'rickenbauer', 'taylor', 'yamaha']
-
+DOMAIN = "localhost"
 
 def review_guitar(crds, obj):
     metadata = obj.get("metadata")

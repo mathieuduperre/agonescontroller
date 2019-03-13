@@ -3,21 +3,83 @@
 from flask import Flask, render_template, request, jsonify
 from kubernetes import client, config
 import os
+import logging
 
-DOMAIN = 'kool.karmalabs.local'
+
+DOMAIN = 'stable.agones.dev'
 VERSION = 'v1'
-NAMESPACE = os.environ['GUITAR_NAMESPACE'] if 'GUITAR_NAMESPACE' in os.environ else 'guitarcenter'
-goodbrands = ['coleclark', 'fender', 'gibson', 'ibanez', 'martin', 'seagull', 'squier', 'washburn']
-badbrands = ['epiphone', 'guild', 'gretsch', 'jackson', 'ovation', 'prs', 'rickenbauer', 'taylor', 'yamaha']
+NAMESPACE = os.environ['GUITAR_NAMESPACE'] if 'GUITAR_NAMESPACE' in os.environ else 'agones-system'
 
 app = Flask(__name__)
 
+tcp = 7654
+my_app = 'simple-udp'
+my_image = 'gcr.io/agones-images/udp-server:0.7'
 
-@app.route("/guitaradd", methods=['POST'])
-def guitaradd():
+def create_gs_app(self, app, request_id):
+    """
+
+    :param app:
+    :type app:
+    :param request_id:
+    :type request_id:
+    :return:
+    :rtype:
+    """
+    # PORTS
+    ports = []
+    ports.append(client.V1ContainerPort(name="tcp", container_port=tcp, protocol="TCP"))
+
+    logging.debug("Agones container creation string {} {} {} {}".format(my_image, ports, my_app, ''))
+
+    env = []
+    my_requests = {'memory': '32Mi', 'cpu': '20m'}
+    my_limits = {'memory': '32Mi', 'cpu': '20m'}
+
+    my_resources = client.V1ResourceRequirements(
+        requests=my_requests, limits=my_limits
+    )
+
+    my_container = client.V1Container(
+        name=my_app,
+        image=my_image,
+        env=env,
+        resources=my_resources
+    )
+
+    my_kind = {'kind':'GameServer'}
+
+
+
+    # The Label will be used as a reference into K8S
+    label = 'app-' + str(app.name) + '-' + request_id
+
+    # Create and configurate a spec section
+    template = client.V1PodTemplateSpec(
+        metadata=client.V1ObjectMeta(labels={"app": label}),
+        spec=client.V1PodSpec(containers=[container], host_network=True, restart_policy="Never"))
+
+    # Create the specification of deployment
+    spec = client.V1JobSpec(
+        template=template)
+
+    # Instantiate the deployment object
+    job = client.V1Job(
+        api_version="batch/v1",
+        kind="Job",
+        metadata=client.V1ObjectMeta(name=label),
+        spec=spec)
+
+    self.logger.info("The instance in K8 will be under the label of %s" % label)
+
+    return job
+
+
+@app.route("/gsadd", methods=['POST'])
+def gsadd():
     name = request.form['name'].lower()
-    brand = request.form['brand']
-    body = {'kind': 'Guitar', 'spec': {'brand': brand, 'review': False}, 'apiVersion': '%s/%s' % (DOMAIN, VERSION), 'metadata': {'name': name, 'namespace': NAMESPACE}}
+    image = request.form['image']
+    body = {'kind': 'Guitar', 'spec': {'image': brand, 'review': False}, 'apiVersion': '%s/%s' % (DOMAIN, VERSION), 'metadata': {'name': name, 'namespace': NAMESPACE}}
     crds = client.CustomObjectsApi()
     try:
         crds.create_namespaced_custom_object(DOMAIN, VERSION, NAMESPACE, 'guitars', body)
@@ -32,8 +94,8 @@ def guitaradd():
     return response
 
 
-@app.route("/guitardelete", methods=['POST'])
-def guitardelete():
+@app.route("/gsdelete", methods=['POST'])
+def gsdelete():
     name = request.form['name']
     crds = client.CustomObjectsApi()
     try:
@@ -49,28 +111,27 @@ def guitardelete():
     return response
 
 
-@app.route("/guitarform")
-def guitarform():
-    return render_template("guitarform.html", title="Add Your Guitar", brands=sorted(goodbrands + badbrands))
+@app.route("/gsform")
+def gsform():
+    return render_template("gsform.html", title="Add Your Gameserver")
 
 
-@app.route("/guitarlist")
-def guitarlist():
+@app.route("/gslist")
+def gslist():
     """
-    display guitars
+    display gameservers
     """
     crds = client.CustomObjectsApi()
-    guitars = crds.list_cluster_custom_object(DOMAIN, VERSION, 'guitars')["items"]
-    guitars = sorted(guitars, key=lambda x: (x.get("spec")["brand"], x.get("metadata")["name"]))
-    return render_template("guitarlist.html", title="Guitars", guitars=guitars)
+    gs = crds.list_cluster_custom_object(DOMAIN, VERSION, 'gameservers')["items"]
+    return render_template("gslist.html", title="Gameservers", gs=gs)
 
 
 @app.route("/")
 def index():
     """
-    display guitars
+    display gameservers
     """
-    return render_template("index.html", title="Guitars")
+    return render_template("index.html", title="GameServers")
 
 
 def run():
